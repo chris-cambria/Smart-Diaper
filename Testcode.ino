@@ -1,58 +1,104 @@
+#include <WiFi.h>
+#include <Firebase_ESP_Client.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-// Corrected pins based on your wiring
-#define DS18B20_PIN 4
-#define MOISTURE_SENSOR_PIN 0  // A0 on ESP32-C3
-#define MQ135_SENSOR_PIN 1      // A1 on ESP32-C3
+// Provide the token generation process info.
+
+#include "addons/TokenHelper.h"
+#include "addons/RTDBHelper.h"
+
+// Insert your network credentials
+
+#define WIFI_SSID "Vivo v29e"
+#define WIFI_PASSWORD "35805417"
+#define API_KEY "AIzaSyCGwBKjXKS5DGNvkcQavvnh0tyRDAz-S3U"
+#define DATABASE_URL "https://smartdiaper2-97108-default-rtdb.firebaseio.com/"
+
+#define DS18B20_PIN     3   // GPIO3
+#define MOISTURE_PIN    0   // GPIO0
+#define GAS_SENSOR_PIN  1   // GPIO1
 
 OneWire oneWire(DS18B20_PIN);
 DallasTemperature tempSensor(&oneWire);
 
-// Thresholds
-const float TEMP_LOW = 35.5;   // Hypothermia
-const float TEMP_HIGH = 37.8;  // Rash/fever
+// Firebase objects
 
-const int MOISTURE_THRESHOLD = 1800; // Calibrate as needed
-const int GAS_THRESHOLD = 3000;      // Calibrate after test
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+unsigned long sendDataPrevMillis = 0;
+bool signupOK = false;
+int moisture = 0;
+int gas=0;
+float tempC = 0.0;
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  Serial.print("Connecting to Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(300);
+  }
+  Serial.println();
+  Serial.println("Connected with IP: ");
+  Serial.println(WiFi.localIP());
+  Serial.println();
+
+  // Assign the API key and database URL
+  config.api_key = API_KEY;
+  config.database_url = DATABASE_URL;
+
+  if(Firebase.signUp(&config,&auth,"","")){
+    Serial.println("signUp OK");
+    signupOK =  true;
+  }
+  else{
+      Serial.printf("%s\n",config.signer.signupError.message.c_str());
+  }
+  config.token_status_callback = tokenStatusCallback;
+  Firebase.begin(&config,&auth);
+  Firebase.reconnectWiFi(true);
   tempSensor.begin();
-  Serial.println("Smart Diaper Monitor Initialized.");
 }
 
 void loop() {
-  // --- Temperature Reading ---
-  tempSensor.requestTemperatures();
-  float tempC = tempSensor.getTempCByIndex(0);
-  Serial.print("Body Temp: ");
-  Serial.print(tempC);
-  Serial.println(" °C");
+  if(Firebase.ready() && signupOK && (millis() - sendDataPrevMillis > 5000 || sendDataPrevMillis == 0)){
+    sendDataPrevMillis = millis();
+    moisture = analogRead(MOISTURE_PIN);
+    gas = analogRead(GAS_SENSOR_PIN);
+    tempSensor.requestTemperatures();
+    tempC = tempSensor.getTempCByIndex(0);
+    if(Firebase.RTDB.setInt(&fbdo, "Sensor/moisture", moisture)){
+      Serial.println(); Serial.print(moisture);
+      Serial.print(" - successfully saved to: " + fbdo.dataPath());
+      Serial.print(" (" + fbdo.dataType() + ")");
+    }
+    else{
+      Serial.println("Failed: "+fbdo.errorReason());
+    }
 
-  if (tempC < TEMP_LOW) {
-    Serial.println(" Warning: Body temp too low.");
-  } else if (tempC > TEMP_HIGH) {
-    Serial.println(" Warning: High temp detected (rash/fever risk).");
+
+    if(Firebase.RTDB.setInt(&fbdo, "Sensor/gas", gas)){
+      Serial.println(); Serial.print(gas);
+      Serial.print(" - successfully saved to: " + fbdo.dataPath());
+      Serial.print(" (" + fbdo.dataType() + ")");
+    }
+    else{
+      Serial.println("Failed: "+fbdo.errorReason());
+    }
+
+
+    if(Firebase.RTDB.setFloat(&fbdo, "Sensor/tempC", tempC)){
+      Serial.println(); Serial.print(tempC);
+      Serial.print(" - successfully saved to: " + fbdo.dataPath());
+      Serial.print(" (" + fbdo.dataType() + ")");
+    }
+    else{
+      Serial.println("Failed: "+fbdo.errorReason());
+    }
   }
-
-  // --- Moisture Sensor Reading ---
-  int moisture = analogRead(MOISTURE_SENSOR_PIN);
-  Serial.print("Moisture: ");
-  Serial.println(moisture);
-  if (moisture < MOISTURE_THRESHOLD) {
-    Serial.println(" Diaper is wet. Change needed.");
-  }
-
-  // --- MQ135 Gas Sensor Reading ---
-  int gas = analogRead(MQ135_SENSOR_PIN);
-  Serial.print("Gas Level: ");
-  Serial.println(gas);
-  if (gas > GAS_THRESHOLD) {
-    Serial.println(" Elevated ammonia: UTI/rash risk.");
-  }
-
-  Serial.println("-----------------------------");
-  delay(5000);
 }
+
