@@ -10,10 +10,10 @@
 
 // Insert your network credentials
 
-#define WIFI_SSID "Vivo v29e"
-#define WIFI_PASSWORD "35805417"
-#define API_KEY "AIzaSyCGwBKjXKS5DGNvkcQavvnh0tyRDAz-S3U"
-#define DATABASE_URL "https://smartdiaper2-97108-default-rtdb.firebaseio.com/"
+#define WIFI_SSID 
+#define WIFI_PASSWORD 
+#define API_KEY 
+#define DATABASE_URL 
 
 #define DS18B20_PIN     3   // GPIO3
 #define MOISTURE_PIN    0   // GPIO0
